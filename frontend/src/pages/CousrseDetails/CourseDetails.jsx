@@ -2,102 +2,138 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchMyEnrollments } from "../../store/slices/enrollmentSlice";
-
 import {
-    fetchCourseById,
-    clearCurrentCourse,
+  fetchCourseById,
+  clearCurrentCourse,
 } from "../../store/slices/coursesSlice";
-import { enrollCourseAsync, clearSuccess } from "../../store/slices/enrollmentSlice";
+import {
+  enrollCourseAsync,
+  clearSuccess,
+} from "../../store/slices/enrollmentSlice";
 import { getMeAsync } from "../../store/slices/authSlice";
 
 export default function CourseDetails() {
-    const { id } = useParams();
-    const navigate = useNavigate();
-    const dispatch = useDispatch();
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const dispatch = useDispatch();
 
-    const { currentCourse, detailLoading, error: courseError } = useSelector((state) => state.courses);
-    const { enrolling, error: enrollError, success, enrollments: myEnrollments } = useSelector((state) => state.enrollment);
-    const { user, token, isAuthenticated } = useSelector((state) => state.auth);
-    const [selectedBatchId, setSelectedBatchId] = useState(null);
+  const {
+    currentCourse,
+    detailLoading,
+    error: courseError,
+  } = useSelector((state) => state.courses);
 
-    useEffect(() => {
-        dispatch(fetchCourseById(id));
-        return () => dispatch(clearCurrentCourse());
-    }, [id, dispatch]);
+  // FIXED (BUG-6): default []
+  const {
+    enrolling,
+    error: enrollError,
+    success,
+    enrollments: myEnrollments = [],
+  } = useSelector((state) => state.enrollment);
 
-    // Load user if token exists but user is not loaded
-    useEffect(() => {
-        if (token && !user) {
-            dispatch(getMeAsync());
-        }
-    }, [token, user, dispatch]);
+  const { user, token, isAuthenticated } = useSelector(
+    (state) => state.auth
+  );
+  const [selectedBatchId, setSelectedBatchId] = useState(null);
 
-    useEffect(() => {
-  if (isAuthenticated) dispatch(fetchMyEnrollments());
-}, [isAuthenticated, dispatch]);
+  useEffect(() => {
+    dispatch(fetchCourseById(id));
+    return () => dispatch(clearCurrentCourse());
+  }, [id, dispatch]);
 
-    const isCreator = user && currentCourse && user._id === currentCourse.instructorId;
-    const isAdmin = user && user.role === "admin";
-    const cannotEnroll = isAdmin || isCreator;
+  useEffect(() => {
+    if (token && !user) dispatch(getMeAsync());
+  }, [token, user, dispatch]);
 
+  useEffect(() => {
+    if (isAuthenticated) dispatch(fetchMyEnrollments());
+  }, [isAuthenticated, dispatch]);
 
-    const alreadyEnrolled = !!myEnrollments?.find((e) => e.course?._id === id);
+  // FIXED (BUG-1 & BUG-2): robust creator check
+  const instructorId =
+    currentCourse?.instructorId?._id || currentCourse?.instructorId;
+  const isCreator = Boolean(
+    user?._id &&
+      instructorId &&
+      String(user._id) === String(instructorId)
+  );
+  const isAdmin = user?.role === "admin";
+  const cannotEnroll = isAdmin || isCreator;
 
+  // FIXED (BUG-5): string/ObjectId safe compare
+  const alreadyEnrolled = myEnrollments.some(
+    (e) => String(e.course?._id) === String(id)
+  );
 
-    const handleEnroll = async () => {
-        let currentUser = user;
-  if (!currentUser && token) {
-    try { currentUser = await dispatch(getMeAsync()).unwrap(); } catch {}
+  // FIXED (BUG-3): removed duplicate stale-user block
+  const handleEnroll = async () => {
+    let currentUser = user;
+    if (!currentUser && token) {
+      try {
+        currentUser = await dispatch(getMeAsync()).unwrap();
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (!currentUser && !isAuthenticated) {
+      navigate("/login");
+      return;
+    }
+
+    // Fresh creator/admin check using the latest user
+    const freshInstructorId =
+      currentCourse?.instructorId?._id || currentCourse?.instructorId;
+    const freshIsCreator = Boolean(
+      currentUser?._id &&
+        freshInstructorId &&
+        String(currentUser._id) === String(freshInstructorId)
+    );
+    const freshIsAdmin = currentUser?.role === "admin";
+
+    if (freshIsAdmin || freshIsCreator) return;
+
+    // FIXED (BUG-7): use real batch id if available
+    const selectedBatch =
+      selectedBatchId !== null ? course.batches?.[selectedBatchId] : null;
+    const batchId = selectedBatch?._id || selectedBatch?.batchCode || null;
+
+    dispatch(
+      enrollCourseAsync({
+        courseId: id,
+        batchId,
+      })
+    );
+  };
+
+  useEffect(() => {
+    if (success) {
+      const timer = setTimeout(() => {
+        navigate("/student");
+        dispatch(clearSuccess());
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [success, navigate, dispatch]);
+
+  if (detailLoading) {
+    return (
+      <div className="flex justify-center items-center min-h-[60vh]">
+        <span className="loading loading-spinner loading-lg"></span>
+      </div>
+    );
   }
-  if (!currentUser && !isAuthenticated) { navigate("/login"); return; }
-        // if user object not present but token exists, attempt to fetch profile
-        if (!user && token) {
-            try {
-                await dispatch(getMeAsync()).unwrap();
-            } catch (err) {
-                // ignore, will redirect to login below
-            }
-        }
 
-        if (!user && !isAuthenticated) {
-            navigate("/login");
-            return;
-        }
+  if (courseError || !currentCourse) {
+    return (
+      <div className="alert alert-error">
+        <span>{courseError || "Course not found"}</span>
+      </div>
+    );
+  }
 
-        if (cannotEnroll) return;
+  const course = currentCourse;
 
-        // Note: Since batches don't have _id in the model, we pass null
-        // The backend can be updated later to handle batch references properly
-        dispatch(enrollCourseAsync({ courseId: id, batchId: selectedBatchId !== null ? selectedBatchId.toString() : null }));
-    };
-
-    useEffect(() => {
-        if (success) {
-            const timer = setTimeout(() => {
-                navigate("/student");
-                dispatch(clearSuccess());
-            }, 1500);
-            return () => clearTimeout(timer);
-        }
-    }, [success, navigate, dispatch]);
-
-    if (detailLoading) {
-        return (
-            <div className="flex justify-center items-center min-h-[60vh]">
-                <span className="loading loading-spinner loading-lg"></span>
-            </div>
-        );
-    }
-
-    if (courseError || !currentCourse) {
-        return (
-            <div className="alert alert-error">
-                <span>{courseError || "Course not found"}</span>
-            </div>
-        );
-    }
-
-    const course = currentCourse;
 
     return (
         <div className="space-y-4 sm:space-y-6">
