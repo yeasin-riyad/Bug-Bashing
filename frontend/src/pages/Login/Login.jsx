@@ -3,9 +3,9 @@
 // FIXED: BUG-008 — uses unified saveToken (utils/auth.js)
 // FIXED: BUG-014 — no window.location.reload()
 // FIXED: BUG-015 — dispatch(setUser) after login
-// FIXED: BUG-016 — demo credentials only in DEV
 // FIXED: BUG-017 — client-side validation
 // FIXED: BUG-019 — clear error on quick login
+// NOTE: Demo login now visible in production too (per request).
 
 import { useState } from "react";
 import { useDispatch } from "react-redux";
@@ -97,49 +97,124 @@ export default function Login() {
             </p>
           </div>
 
-          {/* FIXED (BUG-016): demo creds ONLY in dev builds.
-              FIXED (BUG-004): dev bypass buttons & hardcoded tokens removed. */}
-          {import.meta.env.DEV && (
-            <div className="mb-6 p-4 rounded-2xl bg-base-200/80 border border-base-300 space-y-3">
-              <div className="flex justify-between items-center">
-                <p className="text-xs font-bold text-base-content/80 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-primary" /> Quick Demo
-                  Credentials:
-                </p>
-                <span className="badge badge-xs badge-outline text-[10px]">
-                  Dev Only
-                </span>
-              </div>
+          {/* Quick Demo Credentials — now visible in all environments */}
+          <div className="mb-6 p-4 rounded-2xl bg-base-200/80 border border-base-300 space-y-3">
+            <div className="flex justify-between items-center">
+              <p className="text-xs font-bold text-base-content/80 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-primary" /> Quick Demo
+                Credentials:
+              </p>
+              <span className="badge badge-xs badge-outline text-[10px]">
+                Demo
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  handleQuickLogin(
+                    import.meta.env.VITE_DEMO_ADMIN_EMAIL ||
+                      "admin@coursemaster.com",
+                    import.meta.env.VITE_DEMO_ADMIN_PASS || "admin123"
+                  )
+                }
+                className="btn btn-xs btn-outline btn-primary gap-1 font-semibold"
+              >
+                <ShieldCheck className="w-3 h-3" /> Admin Fill
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleQuickLogin(
+                    import.meta.env.VITE_DEMO_STUDENT_EMAIL ||
+                      "student@coursemaster.com",
+                    import.meta.env.VITE_DEMO_STUDENT_PASS || "student123"
+                  )
+                }
+                className="btn btn-xs btn-outline btn-secondary gap-1 font-semibold"
+              >
+                <UserCheck className="w-3 h-3" /> Student Fill
+              </button>
+            </div>
+
+            {/* One-click auto-login buttons (call API directly) */}
+            <div className="pt-2 border-t border-base-300/80">
+              <p className="text-[11px] font-semibold text-base-content/70 mb-1.5">
+                ⚡ One-click Demo Login:
+              </p>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  onClick={() =>
+                  disabled={loading}
+                  onClick={async () => {
                     handleQuickLogin(
                       import.meta.env.VITE_DEMO_ADMIN_EMAIL ||
                         "admin@coursemaster.com",
                       import.meta.env.VITE_DEMO_ADMIN_PASS || "admin123"
-                    )
-                  }
-                  className="btn btn-xs btn-outline btn-primary gap-1 font-semibold"
+                    );
+                    // Submit with admin credentials
+                    const email =
+                      import.meta.env.VITE_DEMO_ADMIN_EMAIL ||
+                      "admin@coursemaster.com";
+                    const password =
+                      import.meta.env.VITE_DEMO_ADMIN_PASS || "admin123";
+                    try {
+                      setLoading(true);
+                      setError(null);
+                      const res = await loginUser({ email, password });
+                      saveToken(res.data.token);
+                      if (res.data.user) dispatch(setUser(res.data.user));
+                      navigate("/admin");
+                    } catch (err) {
+                      setError(
+                        err.response?.data?.message ||
+                          "Admin demo login failed."
+                      );
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                  className="btn btn-xs btn-primary gap-1 font-bold"
                 >
-                  <ShieldCheck className="w-3 h-3" /> Admin Fill
+                  <ShieldCheck className="w-3 h-3" /> Login as Admin
                 </button>
                 <button
                   type="button"
-                  onClick={() =>
+                  disabled={loading}
+                  onClick={async () => {
                     handleQuickLogin(
                       import.meta.env.VITE_DEMO_STUDENT_EMAIL ||
                         "student@coursemaster.com",
                       import.meta.env.VITE_DEMO_STUDENT_PASS || "student123"
-                    )
-                  }
-                  className="btn btn-xs btn-outline btn-secondary gap-1 font-semibold"
+                    );
+                    const email =
+                      import.meta.env.VITE_DEMO_STUDENT_EMAIL ||
+                      "student@coursemaster.com";
+                    const password =
+                      import.meta.env.VITE_DEMO_STUDENT_PASS || "student123";
+                    try {
+                      setLoading(true);
+                      setError(null);
+                      const res = await loginUser({ email, password });
+                      saveToken(res.data.token);
+                      if (res.data.user) dispatch(setUser(res.data.user));
+                      navigate("/student");
+                    } catch (err) {
+                      setError(
+                        err.response?.data?.message ||
+                          "Student demo login failed."
+                      );
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                  className="btn btn-xs btn-secondary gap-1 font-bold"
                 >
-                  <UserCheck className="w-3 h-3" /> Student Fill
+                  <UserCheck className="w-3 h-3" /> Login as Student
                 </button>
               </div>
             </div>
-          )}
+          </div>
 
           {error && (
             <div className="alert alert-error shadow-md text-sm p-3 mb-4 rounded-xl flex items-center gap-2">
